@@ -133,8 +133,8 @@
             const pass = document.getElementById('password').value;
 
             // RESTRICTION CHECK
-            if (!email.endsWith("@lirmm.fr") && !email.endsWith("@cnrs.fr")) {
-                showMsg("Registration is restricted to @lirmm.fr or @cnrs.fr emails.", true);
+            if (!email.endsWith("@lirmm.fr")) {
+                showMsg("Registration is restricted to @lirmm.fr", true);
                 return;
             }
 
@@ -311,3 +311,4 @@
     </script>
 </body>
 </html>
+
