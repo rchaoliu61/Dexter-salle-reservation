@@ -20,7 +20,7 @@
         .auth-status { font-size: 0.9rem; display: flex; align-items: center; gap: 10px; }
         button { cursor: pointer; padding: 8px 12px; border: none; border-radius: 4px; font-weight: 600; }
         .btn-login { background-color: #3498db; color: white; }
-        .btn-logout { background-color: #e74c3c; color: white; display: none; } /* Hidden by default */
+        .btn-logout { background-color: #e74c3c; color: white; display: none; }
 
         /* Calendar */
         #calendar-container { max-width: 1000px; margin: 2rem auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
@@ -36,9 +36,13 @@
         .modal-btn { width: 100%; margin-top: 10px; padding: 10px; color: white; }
         .btn-signin { background-color: #27ae60; }
         .btn-register { background-color: #8e44ad; }
-        .error-msg { color: red; font-size: 0.8rem; margin-top: 10px; display: none; text-align: center; }
+        .btn-reset { background-color: #e67e22; } /* Orange for reset */
         
-        .toggle-text { text-align: center; margin-top: 15px; font-size: 0.9rem; color: #666; cursor: pointer; text-decoration: underline; }
+        .error-msg { color: red; font-size: 0.8rem; margin-top: 10px; display: none; text-align: center; }
+        .success-msg { color: green; font-size: 0.8rem; margin-top: 10px; display: none; text-align: center; }
+        
+        .toggle-text { text-align: center; margin-top: 15px; font-size: 0.85rem; color: #666; cursor: pointer; text-decoration: underline; }
+        .forgot-link { display: block; text-align: right; font-size: 0.8rem; color: #3498db; cursor: pointer; margin-bottom: 5px; }
     </style>
 </head>
 <body>
@@ -64,11 +68,14 @@
             <input type="email" id="email" placeholder="Email Address">
             <input type="password" id="password" placeholder="Password">
             
+            <span id="forgot-link" class="forgot-link" onclick="toggleResetMode()">Forgot Password?</span>
+
             <button id="confirm-login-btn" class="modal-btn btn-signin" onclick="handleLogin()">Sign In</button>
-            
             <button id="confirm-register-btn" class="modal-btn btn-register" onclick="handleRegister()" style="display:none;">Create Account</button>
+            <button id="confirm-reset-btn" class="modal-btn btn-reset" onclick="handlePasswordReset()" style="display:none;">Send Reset Email</button>
             
             <p id="error-message" class="error-msg"></p>
+            <p id="success-message" class="success-msg"></p>
 
             <div class="toggle-text" id="toggle-mode" onclick="toggleAuthMode()">
                 New here? Create an account
@@ -96,11 +103,9 @@
         const bookingsRef = db.ref('bookings');
         
         let currentUser = null;
-        let isLoginMode = true; // Toggles between Login and Register in the popup
+        let authMode = 'login'; // 'login', 'register', or 'reset'
 
-        // --- AUTH LOGIC ---
-        
-        // Check if user is already logged in
+        // --- AUTH STATE LISTENER ---
         auth.onAuthStateChanged((user) => {
             if (user) {
                 currentUser = user;
@@ -116,74 +121,125 @@
             }
         });
 
+        // --- ACTIONS ---
         function handleLogin() {
             const email = document.getElementById('email').value;
             const pass = document.getElementById('password').value;
-            auth.signInWithEmailAndPassword(email, pass)
-                .catch(error => showError(error.message));
+            auth.signInWithEmailAndPassword(email, pass).catch(e => showMsg(e.message, true));
         }
 
         function handleRegister() {
             const email = document.getElementById('email').value;
             const pass = document.getElementById('password').value;
 
-            // --- NEW CHECK START ---
-            if (!email.endsWith("@lirmm.fr") {
-                showError("Registration is restricted to LIRMM user");
-                return; // Stop here, do not send to Firebase
+            // RESTRICTION CHECK
+            if (!email.endsWith("@lirmm.fr") && !email.endsWith("@cnrs.fr")) {
+                showMsg("Registration is restricted to @lirmm.fr or @cnrs.fr emails.", true);
+                return;
             }
-            // --- NEW CHECK END ---
 
             auth.createUserWithEmailAndPassword(email, pass)
-                .then((userCredential) => {
-                    // Success
+                .then(() => showMsg("Account created!", false))
+                .catch(e => showMsg(e.message, true));
+        }
+
+        function handlePasswordReset() {
+            const email = document.getElementById('email').value;
+            if(!email) {
+                showMsg("Please enter your email address first.", true);
+                return;
+            }
+            auth.sendPasswordResetEmail(email)
+                .then(() => {
+                    showMsg("Reset link sent! Check your inbox.", false);
                 })
-                .catch(error => showError(error.message));
+                .catch(error => showMsg(error.message, true));
         }
 
         function logout() {
             auth.signOut();
         }
 
-        // --- MODAL UI LOGIC ---
+        // --- UI LOGIC ---
         function openModal() {
             document.getElementById('authModal').style.display = 'block';
-            resetModal();
+            setMode('login'); // Always start on login
+            document.getElementById('email').value = '';
+            document.getElementById('password').value = '';
+            clearMsgs();
         }
         function closeModal() {
             document.getElementById('authModal').style.display = 'none';
         }
-        function showError(msg) {
-            const el = document.getElementById('error-message');
-            el.innerText = msg;
-            el.style.display = 'block';
+        function showMsg(msg, isError) {
+            const errEl = document.getElementById('error-message');
+            const succEl = document.getElementById('success-message');
+            if(isError) {
+                errEl.innerText = msg; errEl.style.display = 'block'; succEl.style.display = 'none';
+            } else {
+                succEl.innerText = msg; succEl.style.display = 'block'; errEl.style.display = 'none';
+            }
         }
-        // Switch between "Login" and "Create Account" view
+        function clearMsgs() {
+            document.getElementById('error-message').style.display = 'none';
+            document.getElementById('success-message').style.display = 'none';
+        }
+
+        // Toggles between Login and Register
         function toggleAuthMode() {
-            isLoginMode = !isLoginMode;
+            if (authMode === 'login' || authMode === 'reset') {
+                setMode('register');
+            } else {
+                setMode('login');
+            }
+        }
+        // Toggles specific Reset Mode
+        function toggleResetMode() {
+            setMode('reset');
+        }
+
+        function setMode(mode) {
+            authMode = mode;
+            clearMsgs();
+            
             const title = document.getElementById('modal-title');
+            const passInput = document.getElementById('password');
             const loginBtn = document.getElementById('confirm-login-btn');
             const regBtn = document.getElementById('confirm-register-btn');
+            const resetBtn = document.getElementById('confirm-reset-btn');
+            const forgotLink = document.getElementById('forgot-link');
             const toggleText = document.getElementById('toggle-mode');
 
-            if(isLoginMode) {
+            if (mode === 'login') {
                 title.innerText = "Sign In";
+                passInput.style.display = 'block';
                 loginBtn.style.display = 'block';
                 regBtn.style.display = 'none';
+                resetBtn.style.display = 'none';
+                forgotLink.style.display = 'block';
                 toggleText.innerText = "New here? Create an account";
-            } else {
+                toggleText.style.display = 'block';
+            } 
+            else if (mode === 'register') {
                 title.innerText = "Create Account";
+                passInput.style.display = 'block';
                 loginBtn.style.display = 'none';
                 regBtn.style.display = 'block';
+                resetBtn.style.display = 'none';
+                forgotLink.style.display = 'none';
                 toggleText.innerText = "Already have an account? Sign In";
+                toggleText.style.display = 'block';
             }
-            document.getElementById('error-message').style.display = 'none';
-        }
-        function resetModal() {
-            isLoginMode = false; 
-            toggleAuthMode(); // Reset to Login mode
-            document.getElementById('email').value = '';
-            document.getElementById('password').value = '';
+            else if (mode === 'reset') {
+                title.innerText = "Reset Password";
+                passInput.style.display = 'none'; // Hide password
+                loginBtn.style.display = 'none';
+                regBtn.style.display = 'none';
+                resetBtn.style.display = 'block';
+                forgotLink.style.display = 'none';
+                toggleText.innerText = "Back to Sign In";
+                toggleText.style.display = 'block';
+            }
         }
 
         // --- CALENDAR LOGIC ---
@@ -198,18 +254,13 @@
                 height: 'auto',
                 headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek' },
 
-                // 1. CREATE RESERVATION
+                // CREATE
                 select: function(info) {
                     if (!currentUser) {
-                        // If not logged in, POP UP the login window
-                        openModal();
-                        // Optional: Alert the user why the window appeared
-                        alert("Please Sign In or Create an Account to reserve a slot.");
-                        calendar.unselect();
-                        return;
+                        openModal(); 
+                        return calendar.unselect();
                     }
-
-                    var purpose = prompt('Meeting Purpose / Description:');
+                    var purpose = prompt('Meeting Purpose:');
                     if (!purpose) return calendar.unselect();
 
                     bookingsRef.push({
@@ -219,18 +270,13 @@
                         userId: currentUser.uid,
                         userEmail: currentUser.email
                     }).catch(err => alert("Error: " + err.message));
-                    
                     calendar.unselect();
                 },
 
-                // 2. DELETE RESERVATION
+                // DELETE
                 eventClick: function(info) {
-                    if (!currentUser) {
-                        alert("Please Sign In to manage reservations.");
-                        return;
-                    }
-
-                    // Check ownership
+                    if (!currentUser) { alert("Please Sign In."); return; }
+                    
                     if (info.event.extendedProps.userId === currentUser.uid) {
                         if(confirm("Delete this reservation?")) {
                             bookingsRef.child(info.event.id).remove();
@@ -244,7 +290,6 @@
 
             calendar.render();
 
-            // 3. LISTEN FOR DATA
             bookingsRef.on('child_added', (snapshot) => {
                 const data = snapshot.val();
                 calendar.addEvent({
@@ -253,7 +298,6 @@
                     start: data.start,
                     end: data.end,
                     extendedProps: { userId: data.userId, userEmail: data.userEmail },
-                    // Blue if mine, Grey if others
                     backgroundColor: (currentUser && data.userId === currentUser.uid) ? '#3498db' : '#95a5a6',
                     borderColor: 'transparent'
                 });
@@ -267,5 +311,3 @@
     </script>
 </body>
 </html>
-
-
