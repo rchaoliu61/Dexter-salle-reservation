@@ -126,9 +126,17 @@
         function handleRegister() {
             const email = document.getElementById('email').value;
             const pass = document.getElementById('password').value;
+
+            // --- NEW CHECK START ---
+            if (!email.endsWith("@lirmm.fr") {
+                showError("Registration is restricted to LIRMM user");
+                return; // Stop here, do not send to Firebase
+            }
+            // --- NEW CHECK END ---
+
             auth.createUserWithEmailAndPassword(email, pass)
                 .then((userCredential) => {
-                    // Account created and automatically logged in
+                    // Success
                 })
                 .catch(error => showError(error.message));
         }
@@ -259,4 +267,5 @@
     </script>
 </body>
 </html>
+
 
