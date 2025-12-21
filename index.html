@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>LIRMM Meeting Room</title>
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js'></script>
+    
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; margin: 40px; background: #f0f2f5; }
+        #calendar-container {
+            max-width: 1000px; margin: 0 auto; background: white;
+            padding: 20px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        h2 { text-align: center; color: #2c3e50; }
+        .loading { text-align: center; color: #666; display: none; }
+    </style>
+</head>
+<body>
+
+    <h2>📅 LIRMM Meeting Room Reservation</h2>
+    <div id="loading" class="loading">Syncing with database...</div>
+    <div id='calendar-container'>
+        <div id='calendar'></div>
+    </div>
+
+    <script>
+        // --- 1. FIREBASE CONFIGURATION ---
+        // REPLACE THE OBJECT BELOW with the one from your Firebase Console
+        const firebaseConfig = {
+    apiKey: "AIzaSyDFKDD6Oc7UwVfPdUQWXnYD2I-YRKK_0Dc",
+    authDomain: "dexter-salle-reservation.firebaseapp.com",
+    databaseURL: "https://dexter-salle-reservation-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "dexter-salle-reservation",
+    storageBucket: "dexter-salle-reservation.firebasestorage.app",
+    messagingSenderId: "749673682394",
+    appId: "1:749673682394:web:64fbe89d86ac0e9da45ce3",
+    measurementId: "G-R6Z8QV6LH2"
+  };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const bookingsRef = db.ref('bookings');
+
+        document.addEventListener('DOMContentLoaded', function() {
+            var calendarEl = document.getElementById('calendar');
+            var loadingEl = document.getElementById('loading');
+
+            var calendar = new FullCalendar.Calendar(calendarEl, {
+                initialView: 'timeGridWeek',
+                slotMinTime: '08:00:00',
+                slotMaxTime: '20:00:00',
+                allDaySlot: false,
+                selectable: true,
+                nowIndicator: true,
+                height: 'auto',
+                headerToolbar: {
+                    left: 'prev,next today',
+                    center: 'title',
+                    right: 'dayGridMonth,timeGridWeek'
+                },
+
+                // When user selects a time
+                select: function(info) {
+                    var name = prompt('Enter your Name (e.g. Your Name):');
+                    if (!name) return calendar.unselect();
+                    
+                    var purpose = prompt('Purpose of reservation?');
+                    if (!purpose) return calendar.unselect();
+
+                    // Create event object
+                    var newEvent = {
+                        title: name + ' - ' + purpose,
+                        start: info.startStr,
+                        end: info.endStr,
+                        user: name,
+                        desc: purpose
+                    };
+
+                    // Save to Firebase (Cloud)
+                    bookingsRef.push(newEvent).then(() => {
+                        alert("Reserved successfully!");
+                    }).catch((error) => {
+                        alert("Error saving: " + error.message);
+                    });
+                    
+                    calendar.unselect();
+                },
+
+                // Optional: Click event to see details or delete
+                eventClick: function(info) {
+                    if(confirm("Delete this reservation for " + info.event.title + "?")) {
+                        // Remove from Firebase using the ID we stored
+                        bookingsRef.child(info.event.id).remove();
+                        info.event.remove();
+                    }
+                }
+            });
+
+            calendar.render();
+            loadingEl.style.display = 'block';
+
+            // --- LISTEN FOR DATABASE CHANGES ---
+            // This runs automatically whenever data is added/removed in Firebase
+            bookingsRef.on('child_added', (snapshot) => {
+                const data = snapshot.val();
+                calendar.addEvent({
+                    id: snapshot.key, // Store Firebase Key as Event ID
+                    title: data.title,
+                    start: data.start,
+                    end: data.end
+                });
+                loadingEl.style.display = 'none';
+            });
+
+            bookingsRef.on('child_removed', (snapshot) => {
+                const event = calendar.getEventById(snapshot.key);
+                if (event) event.remove();
+            });
+        });
+    </script>
+</body>
+</html>
