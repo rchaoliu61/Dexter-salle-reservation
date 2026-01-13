@@ -32,12 +32,11 @@
         /* Calendar Container */
         #calendar-container { max-width: 1000px; margin: 2rem auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
 
-        /* MODALS (Popup Windows) */
+        /* MODALS */
         .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); }
         .modal-content { background-color: white; margin: 5% auto; padding: 25px; width: 320px; border-radius: 8px; position: relative; }
         .close { position: absolute; right: 15px; top: 10px; font-size: 24px; cursor: pointer; color: #aaa; }
         
-        /* Form Inputs */
         input, select { width: 100%; padding: 10px; margin: 8px 0; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
         label { font-weight: bold; font-size: 0.9rem; margin-top: 10px; display: block; }
         
@@ -52,7 +51,6 @@
         .toggle-text { text-align: center; margin-top: 15px; font-size: 0.85rem; color: #666; cursor: pointer; text-decoration: underline; }
         .forgot-link { display: block; text-align: right; font-size: 0.8rem; color: #3498db; cursor: pointer; margin-bottom: 5px; }
 
-        /* Wrapper for "Repeat Until" date picker */
         #recurrence-end-wrapper { display: none; background: #f0f0f0; padding: 10px; border-radius: 4px; margin-top: 5px; }
     </style>
 </head>
@@ -156,7 +154,10 @@
                 conflict_msg: "Conflict detected! A future date overlaps with an existing reservation.",
                 error_title: "Please add a title.",
                 restricted_email: "Registration restricted to @lirmm.fr or @cnrs.fr",
-                check_inbox: "Reset link sent. Check your inbox."
+                check_inbox: "Reset link sent. Check your inbox.",
+                // NEW:
+                past_error: "You cannot make a reservation in the past.",
+                delete_past_error: "You cannot delete a reservation that has already passed."
             },
             fr: {
                 app_title: "📅 Disponibilité Salle",
@@ -186,13 +187,16 @@
                 conflict_msg: "Conflit détecté ! Une date future chevauche une réservation existante.",
                 error_title: "Veuillez ajouter un titre.",
                 restricted_email: "Inscription restreinte aux emails @lirmm.fr ou @cnrs.fr",
-                check_inbox: "Lien envoyé. Vérifiez votre boîte mail."
+                check_inbox: "Lien envoyé. Vérifiez votre boîte mail.",
+                // NEW:
+                past_error: "Impossible de réserver dans le passé.",
+                delete_past_error: "Impossible de supprimer une réservation passée."
             }
         };
 
         let currentLang = 'en'; // Default
 
-        // --- FIREBASE CONFIGURATION (YOUR SPECIFIC PROJECT) ---
+        // --- FIREBASE CONFIG (Pre-filled with your data) ---
         const firebaseConfig = {
           apiKey: "AIzaSyDFKDD6Oc7UwVfPdUQWXnYD2I-YRKK_0Dc",
           authDomain: "dexter-salle-reservation.firebaseapp.com",
@@ -217,26 +221,15 @@
         // --- I18N LOGIC ---
         function changeLanguage(lang) {
             currentLang = lang;
-            
-            // 1. Update text on page
             document.querySelectorAll('[data-i18n]').forEach(el => {
                 const key = el.getAttribute('data-i18n');
                 if (translations[lang][key]) {
                     el.innerText = translations[lang][key];
                 }
             });
-
-            // 2. Update Calendar Locale
-            if (calendarRef) {
-                calendarRef.setOption('locale', lang);
-            }
-
-            // 3. Refresh Auth Text state
-            if (document.getElementById('authModal').style.display === 'block') {
-                setAuthMode(authMode);
-            }
+            if (calendarRef) calendarRef.setOption('locale', lang);
+            if (document.getElementById('authModal').style.display === 'block') setAuthMode(authMode);
         }
-        
         function t(key) { return translations[currentLang][key] || key; }
 
         // --- AUTH LOGIC ---
@@ -254,13 +247,11 @@
                 document.getElementById('logout-btn').style.display = 'none';
             }
         });
-
         function handleLogin() {
             const e = document.getElementById('email').value;
             const p = document.getElementById('password').value;
             auth.signInWithEmailAndPassword(e, p).catch(err => showAuthMsg(err.message, true));
         }
-
         function handleRegister() {
             const e = document.getElementById('email').value;
             const p = document.getElementById('password').value;
@@ -270,13 +261,11 @@
             }
             auth.createUserWithEmailAndPassword(e, p).then(() => showAuthMsg("Success!", false)).catch(err => showAuthMsg(err.message, true));
         }
-
         function handlePasswordReset() {
             const e = document.getElementById('email').value;
             if(!e) return showAuthMsg("Enter email first.", true);
             auth.sendPasswordResetEmail(e).then(() => showAuthMsg(t('check_inbox'), false)).catch(err => showAuthMsg(err.message, true));
         }
-
         function logout() { auth.signOut(); }
 
         // --- CALENDAR SETUP ---
@@ -289,21 +278,38 @@
                 allDaySlot: false,
                 selectable: true,
                 height: 'auto',
-                firstDay: 1, // Start on Monday
-                locale: 'en', // Default start
+                firstDay: 1, 
+                locale: 'en',
                 headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek' },
 
+                // 1. SELECT (New Booking)
                 select: function(info) {
                     if (!currentUser) { openAuthModal(); return; }
+
+                    // --- TIME CHECK: BLOCK PAST DATES ---
+                    // We check if the clicked start time is before "now"
+                    if (new Date(info.start) < new Date()) {
+                        alert(t('past_error'));
+                        calendarRef.unselect();
+                        return;
+                    }
+
                     currentSelection = info;
                     openBookingModal();
                 },
 
+                // 2. CLICK (Delete)
                 eventClick: function(info) {
                     if (!currentUser) { alert(t('sign_in')); return; }
                     
                     const eventData = info.event.extendedProps;
                     
+                    // --- TIME CHECK: BLOCK PAST DELETION ---
+                    if (info.event.start < new Date()) {
+                        alert(t('delete_past_error'));
+                        return;
+                    }
+
                     if (eventData.userId !== currentUser.uid) {
                         alert(t('access_denied'));
                         return;
@@ -356,17 +362,14 @@
             });
         });
 
-        // --- NEW BOOKING LOGIC (ENHANCED) ---
+        // --- BOOKING LOGIC ---
         function openBookingModal() {
             document.getElementById('bookingModal').style.display = 'block';
             document.getElementById('book-title').value = "";
             document.getElementById('book-error').style.display = 'none';
             document.getElementById('recur-type').value = "none";
             toggleRecurrenceUI();
-            
-            // Default date: 1 month from now
-            let d = new Date();
-            d.setMonth(d.getMonth() + 1);
+            let d = new Date(); d.setMonth(d.getMonth() + 1);
             document.getElementById('recur-end-date').valueAsDate = d;
         }
 
@@ -406,20 +409,15 @@
 
                 if (recurType === 'none') break; 
 
-                // Increment Logic
                 if (recurType === 'daily') {
-                    loopStart.setDate(loopStart.getDate() + 1);
-                    loopEnd.setDate(loopEnd.getDate() + 1);
+                    loopStart.setDate(loopStart.getDate() + 1); loopEnd.setDate(loopEnd.getDate() + 1);
                 } else if (recurType === 'weekly') {
-                    loopStart.setDate(loopStart.getDate() + 7);
-                    loopEnd.setDate(loopEnd.getDate() + 7);
+                    loopStart.setDate(loopStart.getDate() + 7); loopEnd.setDate(loopEnd.getDate() + 7);
                 } else if (recurType === 'monthly') {
-                    loopStart.setMonth(loopStart.getMonth() + 1);
-                    loopEnd.setMonth(loopEnd.getMonth() + 1);
+                    loopStart.setMonth(loopStart.getMonth() + 1); loopEnd.setMonth(loopEnd.getMonth() + 1);
                 }
             }
 
-            // Conflict Check
             const existingEvents = calendarRef.getEvents();
             let hasConflict = false;
             for (let newEvt of eventsToCreate) {
@@ -455,10 +453,7 @@
         }
 
         // --- UI HELPERS ---
-        function openAuthModal() {
-            document.getElementById('authModal').style.display = 'block';
-            setAuthMode('login');
-        }
+        function openAuthModal() { document.getElementById('authModal').style.display = 'block'; setAuthMode('login'); }
         function closeModal(id) { document.getElementById(id).style.display = 'none'; }
         
         function showAuthMsg(msg, isErr) {
@@ -475,7 +470,6 @@
             authMode = m;
             document.getElementById('auth-error').style.display='none';
             document.getElementById('auth-success').style.display='none';
-            
             const tElem = document.getElementById('auth-title');
             const p = document.getElementById('password');
             const bL = document.getElementById('confirm-login-btn');
@@ -484,21 +478,9 @@
             const fL = document.getElementById('forgot-link');
             const tog = document.getElementById('toggle-mode');
 
-            if(m==='login'){ 
-                tElem.innerText = t('sign_in'); 
-                p.style.display='block'; bL.style.display='block'; bR.style.display='none'; bRe.style.display='none'; fL.style.display='block'; 
-                tog.innerText = t('new_here'); 
-            }
-            else if(m==='register'){ 
-                tElem.innerText = t('create_account'); 
-                p.style.display='block'; bL.style.display='none'; bR.style.display='block'; bRe.style.display='none'; fL.style.display='none'; 
-                tog.innerText = t('has_account'); 
-            }
-            else if(m==='reset'){ 
-                tElem.innerText = "Reset Password"; 
-                p.style.display='none'; bL.style.display='none'; bR.style.display='none'; bRe.style.display='block'; fL.style.display='none'; 
-                tog.innerText = t('back_sign_in'); 
-            }
+            if(m==='login'){ tElem.innerText = t('sign_in'); p.style.display='block'; bL.style.display='block'; bR.style.display='none'; bRe.style.display='none'; fL.style.display='block'; tog.innerText = t('new_here'); }
+            else if(m==='register'){ tElem.innerText = t('create_account'); p.style.display='block'; bL.style.display='none'; bR.style.display='block'; bRe.style.display='none'; fL.style.display='none'; tog.innerText = t('has_account'); }
+            else if(m==='reset'){ tElem.innerText = "Reset Password"; p.style.display='none'; bL.style.display='none'; bR.style.display='none'; bRe.style.display='block'; fL.style.display='none'; tog.innerText = t('back_sign_in'); }
         }
     </script>
 </body>
