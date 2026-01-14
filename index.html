@@ -390,11 +390,17 @@
             }
 
             const eventsToCreate = [];
+            // We create NEW Date objects to avoid modifying the original selection
             let loopStart = new Date(currentSelection.start);
             let loopEnd = new Date(currentSelection.end);
             
+            // --- THE FIX IS HERE ---
+            // We must use 'new Date(loopStart)' to create a COPY. 
+            // Before, it was using the original reference, causing the start time to jump to 23:59.
             const seriesId = (recurType !== 'none') ? Date.now().toString() + Math.random().toString(36).substr(2, 9) : null;
-            const finalDate = (recurType !== 'none') ? new Date(recurEnd) : loopStart;
+            const finalDate = (recurType !== 'none') ? new Date(recurEnd) : new Date(loopStart);
+            
+            // Now we can safely modify finalDate without breaking the meeting time
             finalDate.setHours(23, 59, 59);
 
             while (loopStart <= finalDate) {
@@ -451,7 +457,6 @@
                 calendarRef.unselect();
             }).catch(err => alert("Error: " + err.message));
         }
-
         // --- UI HELPERS ---
         function openAuthModal() { document.getElementById('authModal').style.display = 'block'; setAuthMode('login'); }
         function closeModal(id) { document.getElementById(id).style.display = 'none'; }
@@ -485,6 +490,7 @@
     </script>
 </body>
 </html>
+
 
 
 
