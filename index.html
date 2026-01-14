@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8"> 
-    <title>Reservation Salle DEXTER</title>
+    <meta charset="UTF-8">
+    <title>DEXTER Team Calendar</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     
     <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js'></script>
@@ -40,6 +40,10 @@
         input, select { width: 100%; padding: 10px; margin: 8px 0; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
         label { font-weight: bold; font-size: 0.9rem; margin-top: 10px; display: block; }
         
+        /* Time Row layout */
+        .time-row { display: flex; gap: 10px; }
+        .time-group { flex: 1; }
+
         .modal-btn { width: 100%; margin-top: 15px; padding: 10px; color: white; font-size: 1rem; }
         .btn-signin { background-color: #27ae60; }
         .btn-register { background-color: #8e44ad; }
@@ -104,6 +108,17 @@
             
             <label data-i18n="purpose_label">Purpose / Title:</label>
             <input type="text" id="book-title" placeholder="e.g. Dexter Team Meeting">
+
+            <div class="time-row">
+                <div class="time-group">
+                    <label data-i18n="start_time_label">Start:</label>
+                    <input type="time" id="start-time-input">
+                </div>
+                <div class="time-group">
+                    <label data-i18n="end_time_label">End:</label>
+                    <input type="time" id="end-time-input">
+                </div>
+            </div>
             
             <label data-i18n="recurrence_label">Recurrence:</label>
             <select id="recur-type" onchange="toggleRecurrenceUI()">
@@ -140,6 +155,8 @@
                 back_sign_in: "Back to Sign In",
                 new_reservation: "New Reservation",
                 purpose_label: "Purpose / Title:",
+                start_time_label: "Start:",
+                end_time_label: "End:",
                 recurrence_label: "Recurrence:",
                 recur_none: "One time only",
                 recur_daily: "Daily",
@@ -153,9 +170,8 @@
                 access_denied: "You can only delete your own reservations.",
                 conflict_msg: "Conflict detected! A future date overlaps with an existing reservation.",
                 error_title: "Please add a title.",
-                restricted_email: "Registration restricted to @lirmm.fr",
+                restricted_email: "Registration restricted to @lirmm.fr or @cnrs.fr",
                 check_inbox: "Reset link sent. Check your inbox.",
-                // NEW:
                 past_error: "You cannot make a reservation in the past.",
                 delete_past_error: "You cannot delete a reservation that has already passed."
             },
@@ -173,6 +189,8 @@
                 back_sign_in: "Retour à la connexion",
                 new_reservation: "Nouvelle Réservation",
                 purpose_label: "Objet / Titre :",
+                start_time_label: "Début :",
+                end_time_label: "Fin :",
                 recurrence_label: "Répétition :",
                 recur_none: "Une seule fois",
                 recur_daily: "Tous les jours",
@@ -186,9 +204,8 @@
                 access_denied: "Vous ne pouvez supprimer que vos propres réservations.",
                 conflict_msg: "Conflit détecté ! Une date future chevauche une réservation existante.",
                 error_title: "Veuillez ajouter un titre.",
-                restricted_email: "Inscription restreinte aux emails @lirmm.fr",
+                restricted_email: "Inscription restreinte aux emails @lirmm.fr ou @cnrs.fr",
                 check_inbox: "Lien envoyé. Vérifiez votre boîte mail.",
-                // NEW:
                 past_error: "Impossible de réserver dans le passé.",
                 delete_past_error: "Impossible de supprimer une réservation passée."
             }
@@ -196,7 +213,7 @@
 
         let currentLang = 'en'; // Default
 
-        // --- FIREBASE CONFIG (Pre-filled with your data) ---
+        // --- FIREBASE CONFIGURATION ---
         const firebaseConfig = {
           apiKey: "AIzaSyDFKDD6Oc7UwVfPdUQWXnYD2I-YRKK_0Dc",
           authDomain: "dexter-salle-reservation.firebaseapp.com",
@@ -247,11 +264,13 @@
                 document.getElementById('logout-btn').style.display = 'none';
             }
         });
+
         function handleLogin() {
             const e = document.getElementById('email').value;
             const p = document.getElementById('password').value;
             auth.signInWithEmailAndPassword(e, p).catch(err => showAuthMsg(err.message, true));
         }
+
         function handleRegister() {
             const e = document.getElementById('email').value;
             const p = document.getElementById('password').value;
@@ -261,6 +280,7 @@
             }
             auth.createUserWithEmailAndPassword(e, p).then(() => showAuthMsg("Success!", false)).catch(err => showAuthMsg(err.message, true));
         }
+
         function handlePasswordReset() {
             const e = document.getElementById('email').value;
             if(!e) return showAuthMsg("Enter email first.", true);
@@ -282,12 +302,9 @@
                 locale: 'en',
                 headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek' },
 
-                // 1. SELECT (New Booking)
                 select: function(info) {
                     if (!currentUser) { openAuthModal(); return; }
-
-                    // --- TIME CHECK: BLOCK PAST DATES ---
-                    // We check if the clicked start time is before "now"
+                    
                     if (new Date(info.start) < new Date()) {
                         alert(t('past_error'));
                         calendarRef.unselect();
@@ -298,13 +315,10 @@
                     openBookingModal();
                 },
 
-                // 2. CLICK (Delete)
                 eventClick: function(info) {
                     if (!currentUser) { alert(t('sign_in')); return; }
-                    
                     const eventData = info.event.extendedProps;
                     
-                    // --- TIME CHECK: BLOCK PAST DELETION ---
                     if (info.event.start < new Date()) {
                         alert(t('delete_past_error'));
                         return;
@@ -362,6 +376,13 @@
             });
         });
 
+        // --- HELPER FOR TIME FORMAT ---
+        function toTimeStr(date) {
+            let h = date.getHours().toString().padStart(2, '0');
+            let m = date.getMinutes().toString().padStart(2, '0');
+            return h + ":" + m;
+        }
+
         // --- BOOKING LOGIC ---
         function openBookingModal() {
             document.getElementById('bookingModal').style.display = 'block';
@@ -369,8 +390,27 @@
             document.getElementById('book-error').style.display = 'none';
             document.getElementById('recur-type').value = "none";
             toggleRecurrenceUI();
+            
+            // Recurrence End Date Default (1 Month)
             let d = new Date(); d.setMonth(d.getMonth() + 1);
             document.getElementById('recur-end-date').valueAsDate = d;
+
+            // --- TIME PICKER LOGIC ---
+            let s = new Date(currentSelection.start);
+            let e = new Date(currentSelection.end);
+            
+            // Check if this was a Month View click (Midnight to Midnight next day)
+            // If hours are 00:00, we provide a smart default (e.g., 9am - 10am)
+            // instead of leaving it at midnight.
+            const isMidnight = (s.getHours() === 0 && s.getMinutes() === 0 && e.getHours() === 0);
+
+            if (isMidnight) {
+                document.getElementById('start-time-input').value = "09:00";
+                document.getElementById('end-time-input').value = "10:00";
+            } else {
+                document.getElementById('start-time-input').value = toTimeStr(s);
+                document.getElementById('end-time-input').value = toTimeStr(e);
+            }
         }
 
         function toggleRecurrenceUI() {
@@ -382,6 +422,10 @@
             const title = document.getElementById('book-title').value;
             const recurType = document.getElementById('recur-type').value;
             const recurEnd = document.getElementById('recur-end-date').value;
+            
+            // Get Time Inputs
+            const sTimeVal = document.getElementById('start-time-input').value;
+            const eTimeVal = document.getElementById('end-time-input').value;
 
             if(!title) {
                 document.getElementById('book-error').innerText = t('error_title');
@@ -390,17 +434,26 @@
             }
 
             const eventsToCreate = [];
-            // We create NEW Date objects to avoid modifying the original selection
-            let loopStart = new Date(currentSelection.start);
-            let loopEnd = new Date(currentSelection.end);
             
-            // --- THE FIX IS HERE ---
-            // We must use 'new Date(loopStart)' to create a COPY. 
-            // Before, it was using the original reference, causing the start time to jump to 23:59.
+            // We use the DATE from the selection, but the TIME from the inputs
+            let baseDate = new Date(currentSelection.start);
+            let [sh, sm] = sTimeVal.split(':').map(Number);
+            let [eh, em] = eTimeVal.split(':').map(Number);
+
+            // Create initial start/end objects
+            let loopStart = new Date(baseDate);
+            loopStart.setHours(sh, sm, 0);
+
+            let loopEnd = new Date(baseDate);
+            loopEnd.setHours(eh, em, 0);
+
+            // Handle Overnight (e.g. 11pm to 1am)
+            if (loopEnd <= loopStart) {
+                loopEnd.setDate(loopEnd.getDate() + 1);
+            }
+
             const seriesId = (recurType !== 'none') ? Date.now().toString() + Math.random().toString(36).substr(2, 9) : null;
             const finalDate = (recurType !== 'none') ? new Date(recurEnd) : new Date(loopStart);
-            
-            // Now we can safely modify finalDate without breaking the meeting time
             finalDate.setHours(23, 59, 59);
 
             while (loopStart <= finalDate) {
@@ -457,6 +510,7 @@
                 calendarRef.unselect();
             }).catch(err => alert("Error: " + err.message));
         }
+
         // --- UI HELPERS ---
         function openAuthModal() { document.getElementById('authModal').style.display = 'block'; setAuthMode('login'); }
         function closeModal(id) { document.getElementById(id).style.display = 'none'; }
@@ -490,7 +544,3 @@
     </script>
 </body>
 </html>
-
-
-
-
